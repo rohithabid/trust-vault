@@ -1,32 +1,28 @@
-# React + TypeScript + Vite
+# Trust Vault 🛡️
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+> High-Assurance Zero-Trust Security Suite & Tamper-Proof Document Verification  
+> **Project Owner:** Rohith (`rohithabid@gmail.com`)
 
-Currently, two official plugins are available:
+---
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## 🌐 Live System Links
+* **Production Live URL (Vercel):** [https://rohith-final-trustvault.vercel.app](https://rohith-final-trustvault.vercel.app)
+* **GitHub Repository:** [https://github.com/rohithabid/trust-vault](https://github.com/rohithabid/trust-vault)
 
-## React Compiler
+---
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## 🔑 Features & Architecture
+1. **Zero-Trust Access Control**: Granular credential and document isolation with 0ms revocation latency cutoff.
+2. **Cryptographic SHA-256 Verification**: Tamper-evident hash integrity for all sensitive uploaded payloads and documents.
+3. **Escrow Smart Settlement & Timelock**: Multi-sig simulated state verification for secure financial and credential transfers.
+4. **OLED Security Console**: Minimalist, dark-mode real-time terminal UI engineered for security teams.
 
-## Expanding the Oxlint configuration
+---
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+## 🚀 Running Locally
+```bash
+git clone https://github.com/rohithabid/trust-vault.git
+cd trust-vault
+npm install
+npm run dev
 ```
-
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
