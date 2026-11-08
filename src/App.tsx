@@ -41,7 +41,7 @@ const INITIAL_ITEMS: VaultItem[] = [
     title: 'Project Escrow Smart Settlement',
     category: 'escrow',
     secret: '$5,000 USDC Timelock Release',
-    metadata: 'Signer: Rohith & Snuhith (2-of-2 Multi-Sig)',
+    metadata: 'Signer: Rohith (Multi-Sig Autonomous)',
     timestamp: '2026-11-08 09:35',
     status: 'locked'
   }
@@ -158,7 +158,7 @@ export default function App() {
               </span>
             </div>
             <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#888888' }}>
-              High-Assurance Security Suite • Rohith & Snuhith Joint Infrastructure
+              High-Assurance Security Suite • Rohith Dedicated Infrastructure
             </p>
           </div>
         </div>
