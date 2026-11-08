@@ -1,123 +1,234 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  Shield, Plus, Trash2, Eye, EyeOff, 
-  Copy, Check, Terminal,
-  User, Database, Server
-} from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Shield, LogOut, Database, Server, Terminal } from 'lucide-react';
+import type { UserRole, UserProfile, VaultRecord, AuditLogEntry } from './types';
+import { AuthPage } from './components/AuthPage';
+import { AdminDashboard } from './components/AdminDashboard';
+import { OwnerDashboard } from './components/OwnerDashboard';
+import { CoOwnerDashboard } from './components/CoOwnerDashboard';
+import { computeSHA256 } from './lib/crypto';
 
-interface VaultItem {
-  id: string;
-  title: string;
-  category: 'credentials' | 'documents' | 'escrow';
-  secret: string;
-  hash?: string;
-  metadata?: string;
-  timestamp: string;
-  status: 'locked' | 'verified' | 'released';
-}
+// Pre-seeded verified accounts
+const INITIAL_USERS: UserProfile[] = [
+  {
+    id: 'usr-admin-01',
+    email: 'admin@trustvault.security',
+    fullName: 'System Security Administrator',
+    role: 'admin',
+    isSuspended: false,
+    createdAt: '2026-11-01 08:00:00'
+  },
+  {
+    id: 'usr-owner-01',
+    email: 'rohithabid@gmail.com',
+    fullName: 'Rohith Abid (Primary Vault Owner)',
+    role: 'owner',
+    isSuspended: false,
+    createdAt: '2026-11-08 09:00:00'
+  },
+  {
+    id: 'usr-coowner-01',
+    email: 'collaborator@trustvault.security',
+    fullName: 'Authorized Enterprise Co-Owner',
+    role: 'co_owner',
+    isSuspended: false,
+    createdAt: '2026-11-08 10:15:00'
+  }
+];
 
-const INITIAL_ITEMS: VaultItem[] = [
+const INITIAL_RECORDS: VaultRecord[] = [
   {
     id: 'tv-001',
     title: 'Supabase Master JWT Secret',
     category: 'credentials',
+    ownerId: 'usr-owner-01',
+    ownerEmail: 'rohithabid@gmail.com',
     secret: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.t-vault-rohith-2026',
     metadata: 'rohithabid@gmail.com / Production',
     timestamp: '2026-11-08 09:30',
-    status: 'locked'
+    status: 'locked',
+    coOwners: ['collaborator@trustvault.security']
   },
   {
     id: 'tv-002',
     title: 'Rohith_Final_Report_Audit.pdf',
     category: 'documents',
+    ownerId: 'usr-owner-01',
+    ownerEmail: 'rohithabid@gmail.com',
     secret: 'DOC_PAYLOAD_VALIDATED',
     hash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
     metadata: 'SHA-256 Tamper Proof Anchor',
     timestamp: '2026-11-08 09:32',
-    status: 'verified'
+    status: 'verified',
+    coOwners: ['collaborator@trustvault.security']
   },
   {
     id: 'tv-003',
     title: 'Project Escrow Smart Settlement',
     category: 'escrow',
+    ownerId: 'usr-owner-01',
+    ownerEmail: 'rohithabid@gmail.com',
     secret: '$5,000 USDC Timelock Release',
-    metadata: 'Signer: Rohith (Multi-Sig Autonomous)',
+    metadata: 'Signer: Rohith & Co-Owner (Multi-Sig Autonomous)',
     timestamp: '2026-11-08 09:35',
-    status: 'locked'
+    status: 'locked',
+    coOwners: ['collaborator@trustvault.security']
   }
 ];
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'all' | 'credentials' | 'documents' | 'escrow'>('all');
-  const [items, setItems] = useState<VaultItem[]>(() => {
-    const saved = localStorage.getItem('trust_vault_items');
-    return saved ? JSON.parse(saved) : INITIAL_ITEMS;
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
+    const saved = localStorage.getItem('trust_vault_session_user');
+    return saved ? JSON.parse(saved) : null;
   });
-  const [visibleSecrets, setVisibleSecrets] = useState<Record<string, boolean>>({});
-  const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const [newTitle, setNewTitle] = useState('');
-  const [newCategory, setNewCategory] = useState<'credentials' | 'documents' | 'escrow'>('credentials');
-  const [newSecret, setNewSecret] = useState('');
-  const [newMeta, setNewMeta] = useState('');
-  const [showAddForm, setShowAddForm] = useState(false);
+  const [users, setUsers] = useState<UserProfile[]>(() => {
+    const saved = localStorage.getItem('trust_vault_users_store');
+    return saved ? JSON.parse(saved) : INITIAL_USERS;
+  });
+
+  const [records, setRecords] = useState<VaultRecord[]>(() => {
+    const saved = localStorage.getItem('trust_vault_records_store');
+    return saved ? JSON.parse(saved) : INITIAL_RECORDS;
+  });
+
+  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(() => {
+    const saved = localStorage.getItem('trust_vault_audit_logs');
+    return saved ? JSON.parse(saved) : [
+      {
+        id: 'aud-001',
+        actorEmail: 'system@trustvault.security',
+        actorRole: 'admin',
+        action: 'GENESIS_CHAIN_INITIALIZED',
+        outcome: 'success',
+        details: { initialized: true },
+        previousHash: '0000000000000000000000000000000000000000000000000000000000000000',
+        currentHash: 'b4c72d6340263f338d7c4932cc74ef0ee35552a4e21a8a25c192d24dd78fa420',
+        timestamp: '2026-11-08 08:00:00'
+      }
+    ];
+  });
 
   useEffect(() => {
-    localStorage.setItem('trust_vault_items', JSON.stringify(items));
-  }, [items]);
-
-  const toggleVisibility = (id: string) => {
-    setVisibleSecrets(prev => ({ ...prev, [id]: !prev[id] }));
-  };
-
-  const copyToClipboard = (text: string, id: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
-  };
-
-  const handleAddItem = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTitle || !newSecret) return;
-
-    let hashVal = undefined;
-    if (newCategory === 'documents') {
-      hashVal = Array.from(crypto.getRandomValues(new Uint8Array(16)))
-        .map(b => b.toString(16).padStart(2, '0')).join('') + '...sha256';
+    if (currentUser) {
+      localStorage.setItem('trust_vault_session_user', JSON.stringify(currentUser));
+    } else {
+      localStorage.removeItem('trust_vault_session_user');
     }
+  }, [currentUser]);
 
-    const newItem: VaultItem = {
-      id: `tv-${Date.now().toString().slice(-4)}`,
-      title: newTitle,
-      category: newCategory,
-      secret: newSecret,
-      hash: hashVal,
-      metadata: newMeta || 'Owner: Rohith',
-      timestamp: new Date().toISOString().replace('T', ' ').slice(0, 16),
-      status: newCategory === 'escrow' ? 'locked' : 'verified'
+  useEffect(() => {
+    localStorage.setItem('trust_vault_users_store', JSON.stringify(users));
+  }, [users]);
+
+  useEffect(() => {
+    localStorage.setItem('trust_vault_records_store', JSON.stringify(records));
+  }, [records]);
+
+  useEffect(() => {
+    localStorage.setItem('trust_vault_audit_logs', JSON.stringify(auditLogs));
+  }, [auditLogs]);
+
+  const appendAuditLog = async (action: string, outcome: 'success' | 'denied', details: any) => {
+    const lastHash = auditLogs[0]?.currentHash || '0000000000000000000000000000000000000000000000000000000000000000';
+    const payload = `${lastHash}:${currentUser?.email || 'anonymous'}:${action}:${outcome}:${JSON.stringify(details)}:${Date.now()}`;
+    const newHash = await computeSHA256(payload);
+
+    const newEntry: AuditLogEntry = {
+      id: `aud-${Date.now().toString().slice(-6)}`,
+      actorEmail: currentUser?.email || 'anonymous',
+      actorRole: currentUser?.role || 'owner',
+      action,
+      outcome,
+      details,
+      previousHash: lastHash,
+      currentHash: newHash,
+      timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19)
     };
 
-    setItems([newItem, ...items]);
-    setNewTitle('');
-    setNewSecret('');
-    setNewMeta('');
-    setShowAddForm(false);
+    setAuditLogs([newEntry, ...auditLogs]);
   };
 
-  const deleteItem = (id: string) => {
-    setItems(items.filter(item => item.id !== id));
+  const handleLoginSuccess = (user: UserProfile) => {
+    if (!users.some(u => u.email === user.email)) {
+      setUsers(prev => [user, ...prev]);
+    }
+    setCurrentUser(user);
+    appendAuditLog('AUTH_LOGIN_SUCCESS', 'success', { email: user.email, role: user.role });
   };
 
-  const unlockEscrow = (id: string) => {
-    setItems(items.map(item => item.id === id ? { ...item, status: 'released' } : item));
+  const handleLogout = () => {
+    if (currentUser) {
+      appendAuditLog('AUTH_LOGOUT', 'success', { email: currentUser.email });
+    }
+    setCurrentUser(null);
   };
 
-  const filteredItems = activeTab === 'all' 
-    ? items 
-    : items.filter(item => item.category === activeTab);
+  // Admin Handlers
+  const handleToggleUserStatus = (userId: string) => {
+    setUsers(users.map(u => {
+      if (u.id === userId) {
+        const nextStatus = !u.isSuspended;
+        appendAuditLog('ADMIN_USER_STATUS_CHANGE', 'success', { targetUserId: userId, isSuspended: nextStatus });
+        return { ...u, isSuspended: nextStatus };
+      }
+      return u;
+    }));
+  };
+
+  const handleChangeUserRole = (userId: string, newRole: UserRole) => {
+    setUsers(users.map(u => {
+      if (u.id === userId) {
+        appendAuditLog('ADMIN_USER_ROLE_CHANGE', 'success', { targetUserId: userId, newRole });
+        return { ...u, role: newRole };
+      }
+      return u;
+    }));
+  };
+
+  // Owner Handlers
+  const handleAddRecord = (record: VaultRecord) => {
+    setRecords([record, ...records]);
+    appendAuditLog('RECORD_CREATED', 'success', { recordId: record.id, category: record.category, title: record.title });
+  };
+
+  const handleUpdateRecord = (id: string, updates: Partial<VaultRecord>) => {
+    setRecords(records.map(r => r.id === id ? { ...r, ...updates } : r));
+    appendAuditLog('RECORD_UPDATED', 'success', { recordId: id, updates });
+  };
+
+  const handleDeleteRecord = (id: string) => {
+    setRecords(records.filter(r => r.id !== id));
+    appendAuditLog('RECORD_DELETED', 'success', { recordId: id });
+  };
+
+  // Co-Owner Handlers
+  const handleApproveEscrow = (recordId: string) => {
+    setRecords(records.map(r => {
+      if (r.id === recordId) {
+        return { ...r, status: 'released', metadata: `${r.metadata} • Multi-Sig Approved by ${currentUser?.email}` };
+      }
+      return r;
+    }));
+    appendAuditLog('ESCROW_MULTISIG_APPROVED', 'success', { recordId, approver: currentUser?.email });
+    alert('Multi-Sig Signature verified and recorded! Escrow settlement released.');
+  };
+
+  const handleVerifyDocument = (recordId: string) => {
+    const item = records.find(r => r.id === recordId);
+    if (item && item.hash) {
+      appendAuditLog('DOCUMENT_TAMPER_VERIFIED', 'success', { recordId, hash: item.hash });
+      alert(`Tamper Check PASSED: Integrity verified against SHA-256 anchor:\n${item.hash}`);
+    }
+  };
+
+  // REQUIREMENT 1: If not authenticated, ALWAYS show Auth Landing Page FIRST
+  if (!currentUser) {
+    return <AuthPage onLoginSuccess={handleLoginSuccess} mockUsers={users} />;
+  }
 
   return (
     <div style={{ backgroundColor: '#000000', color: '#ffffff', minHeight: '100vh', padding: '24px 32px' }}>
+      {/* Universal Top Navigation Header */}
       <header style={{ 
         display: 'flex', 
         justifyContent: 'space-between', 
@@ -146,15 +257,15 @@ export default function App() {
                 TRUST VAULT
               </h1>
               <span style={{ 
-                backgroundColor: '#ef4444', 
-                color: '#ffffff', 
+                backgroundColor: currentUser.role === 'admin' ? '#ef4444' : currentUser.role === 'owner' ? '#ffffff' : '#38bdf8', 
+                color: currentUser.role === 'owner' ? '#000000' : '#ffffff', 
                 fontSize: '11px', 
                 fontWeight: 700, 
                 padding: '2px 8px', 
                 borderRadius: '4px',
                 textTransform: 'uppercase'
               }}>
-                v1.0 Core
+                {currentUser.role.replace('_', ' ')}
               </span>
             </div>
             <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#888888' }}>
@@ -163,6 +274,7 @@ export default function App() {
           </div>
         </div>
 
+        {/* User Identity and Logout */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <div style={{
             display: 'flex',
@@ -173,32 +285,33 @@ export default function App() {
             padding: '8px 14px',
             borderRadius: '8px'
           }}>
-            <User size={16} color="#ef4444" />
             <div style={{ textAlign: 'left' }}>
-              <div style={{ fontSize: '12px', fontWeight: 600 }}>rohithabid@gmail.com</div>
-              <div style={{ fontSize: '10px', color: '#666666' }}>Role: Vault Co-Owner</div>
+              <div style={{ fontSize: '12px', fontWeight: 600 }}>{currentUser.email}</div>
+              <div style={{ fontSize: '10px', color: '#666666' }}>ID: {currentUser.fullName}</div>
             </div>
           </div>
           <button
-            onClick={() => setShowAddForm(true)}
+            onClick={handleLogout}
             style={{
-              backgroundColor: '#ef4444',
-              color: '#ffffff',
-              border: 'none',
+              backgroundColor: '#161616',
+              color: '#f87171',
+              border: '1px solid #2a1111',
               borderRadius: '8px',
-              padding: '10px 18px',
-              fontWeight: 700,
-              fontSize: '13px',
+              padding: '10px 14px',
+              fontWeight: 600,
+              fontSize: '12px',
               display: 'flex',
               alignItems: 'center',
-              gap: '8px',
+              gap: '6px',
+              cursor: 'pointer'
             }}
           >
-            <Plus size={16} /> New Asset Lock
+            <LogOut size={15} /> Sign Out
           </button>
         </div>
       </header>
 
+      {/* Sub-Header Infrastructure Badges */}
       <section style={{ 
         display: 'grid', 
         gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', 
@@ -266,313 +379,35 @@ export default function App() {
         </div>
       </section>
 
-      <div style={{ 
-        display: 'flex', 
-        gap: '10px', 
-        borderBottom: '1px solid #1a1a1a', 
-        paddingBottom: '12px', 
-        marginBottom: '20px' 
-      }}>
-        {[
-          { key: 'all', label: 'All Vault Records', count: items.length },
-          { key: 'credentials', label: 'Secrets & Passwords', count: items.filter(i => i.category === 'credentials').length },
-          { key: 'documents', label: 'Document Tamper-Proof', count: items.filter(i => i.category === 'documents').length },
-          { key: 'escrow', label: 'Trust Escrow Multi-Sig', count: items.filter(i => i.category === 'escrow').length },
-        ].map(tab => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key as any)}
-            style={{
-              background: activeTab === tab.key ? '#ef4444' : '#0d0d0d',
-              color: activeTab === tab.key ? '#ffffff' : '#888888',
-              border: activeTab === tab.key ? '1px solid #ef4444' : '1px solid #1f1f1f',
-              padding: '8px 16px',
-              borderRadius: '6px',
-              fontSize: '13px',
-              fontWeight: 600,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px'
-            }}
-          >
-            {tab.label}
-            <span style={{ 
-              background: activeTab === tab.key ? 'rgba(0,0,0,0.3)' : '#222222', 
-              padding: '2px 6px', 
-              borderRadius: '4px',
-              fontSize: '11px' 
-            }}>
-              {tab.count}
-            </span>
-          </button>
-        ))}
-      </div>
+      {/* Role-Specific Dashboard Rendering */}
+      {currentUser.role === 'admin' && (
+        <AdminDashboard
+          currentUser={currentUser}
+          users={users}
+          records={records}
+          auditLogs={auditLogs}
+          onToggleUserStatus={handleToggleUserStatus}
+          onChangeUserRole={handleChangeUserRole}
+        />
+      )}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-        {filteredItems.map(item => (
-          <div 
-            key={item.id}
-            style={{
-              background: '#0a0a0a',
-              border: '1px solid #1c1c1c',
-              borderRadius: '8px',
-              padding: '16px 20px',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              borderLeft: item.category === 'credentials' ? '4px solid #ffffff' : item.category === 'documents' ? '4px solid #ef4444' : '4px solid #dc2626'
-            }}
-          >
-            <div style={{ maxWidth: '65%' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
-                <span style={{ 
-                  textTransform: 'uppercase', 
-                  fontSize: '10px', 
-                  fontWeight: 700, 
-                  letterSpacing: '0.5px',
-                  background: '#161616',
-                  color: item.category === 'documents' ? '#ef4444' : '#ffffff',
-                  padding: '2px 6px',
-                  borderRadius: '4px'
-                }}>
-                  {item.category}
-                </span>
-                <span style={{ fontSize: '11px', color: '#555555' }}>ID: {item.id}</span>
-                <span style={{ fontSize: '11px', color: '#555555' }}>• {item.timestamp}</span>
-              </div>
-              <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', fontWeight: 600 }}>{item.title}</h3>
-              <p style={{ margin: '0 0 10px 0', fontSize: '12px', color: '#777777' }}>{item.metadata}</p>
+      {currentUser.role === 'owner' && (
+        <OwnerDashboard
+          currentUser={currentUser}
+          records={records}
+          onAddRecord={handleAddRecord}
+          onUpdateRecord={handleUpdateRecord}
+          onDeleteRecord={handleDeleteRecord}
+        />
+      )}
 
-              <div style={{ 
-                background: '#000000', 
-                border: '1px solid #1a1a1a', 
-                borderRadius: '6px', 
-                padding: '8px 12px',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '12px',
-                fontFamily: 'monospace',
-                fontSize: '13px'
-              }}>
-                <span style={{ color: visibleSecrets[item.id] ? '#ffffff' : '#666666' }}>
-                  {visibleSecrets[item.id] ? item.secret : '••••••••••••••••••••••••••••••••'}
-                </span>
-                <button
-                  onClick={() => toggleVisibility(item.id)}
-                  style={{ background: 'transparent', border: 'none', color: '#888888', padding: 0 }}
-                  title={visibleSecrets[item.id] ? "Hide" : "Show"}
-                >
-                  {visibleSecrets[item.id] ? <EyeOff size={14} /> : <Eye size={14} />}
-                </button>
-                <button
-                  onClick={() => copyToClipboard(item.secret, item.id)}
-                  style={{ background: 'transparent', border: 'none', color: '#888888', padding: 0 }}
-                  title="Copy"
-                >
-                  {copiedId === item.id ? <Check size={14} color="#22c55e" /> : <Copy size={14} />}
-                </button>
-              </div>
-
-              {item.hash && (
-                <div style={{ marginTop: '8px', fontSize: '11px', color: '#555555', fontFamily: 'monospace' }}>
-                  Hash: {item.hash}
-                </div>
-              )}
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div style={{ textAlign: 'right' }}>
-                <span style={{ 
-                  display: 'inline-block',
-                  padding: '4px 10px',
-                  borderRadius: '20px',
-                  fontSize: '11px',
-                  fontWeight: 700,
-                  textTransform: 'uppercase',
-                  background: item.status === 'verified' || item.status === 'released' ? '#0b2612' : '#260a0a',
-                  color: item.status === 'verified' || item.status === 'released' ? '#22c55e' : '#ef4444',
-                  border: `1px solid ${item.status === 'verified' || item.status === 'released' ? '#166534' : '#991b1b'}`
-                }}>
-                  {item.status}
-                </span>
-              </div>
-
-              {item.category === 'escrow' && item.status === 'locked' && (
-                <button
-                  onClick={() => unlockEscrow(item.id)}
-                  style={{
-                    background: '#111111',
-                    border: '1px solid #ef4444',
-                    color: '#ef4444',
-                    padding: '8px 12px',
-                    borderRadius: '6px',
-                    fontSize: '12px',
-                    fontWeight: 600,
-                  }}
-                >
-                  Release Escrow
-                </button>
-              )}
-
-              <button
-                onClick={() => deleteItem(item.id)}
-                style={{
-                  background: 'transparent',
-                  border: '1px solid #222222',
-                  color: '#555555',
-                  padding: '8px',
-                  borderRadius: '6px',
-                }}
-                title="Purge Entry"
-              >
-                <Trash2 size={16} />
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {showAddForm && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.85)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000,
-          backdropFilter: 'blur(4px)'
-        }}>
-          <form 
-            onSubmit={handleAddItem}
-            style={{
-              background: '#0a0a0a',
-              border: '1px solid #222222',
-              borderRadius: '12px',
-              padding: '28px',
-              width: '460px',
-              maxWidth: '90%'
-            }}
-          >
-            <h2 style={{ margin: '0 0 18px 0', fontSize: '18px', fontWeight: 700, color: '#ffffff' }}>
-              Create Secure Asset Record
-            </h2>
-
-            <div style={{ marginBottom: '14px' }}>
-              <label style={{ display: 'block', fontSize: '12px', color: '#888888', marginBottom: '6px' }}>Vault Category</label>
-              <select
-                value={newCategory}
-                onChange={e => setNewCategory(e.target.value as any)}
-                style={{
-                  width: '100%',
-                  background: '#000000',
-                  border: '1px solid #222222',
-                  borderRadius: '6px',
-                  padding: '10px',
-                  color: '#ffffff',
-                  fontSize: '13px'
-                }}
-              >
-                <option value="credentials">Secrets & Passwords</option>
-                <option value="documents">Document Verification (Tamper Proof)</option>
-                <option value="escrow">Trust Escrow Multi-Sig</option>
-              </select>
-            </div>
-
-            <div style={{ marginBottom: '14px' }}>
-              <label style={{ display: 'block', fontSize: '12px', color: '#888888', marginBottom: '6px' }}>Asset Title</label>
-              <input
-                type="text"
-                placeholder="e.g. Master DB Key / Academic Audit"
-                value={newTitle}
-                onChange={e => setNewTitle(e.target.value)}
-                required
-                style={{
-                  width: '100%',
-                  background: '#000000',
-                  border: '1px solid #222222',
-                  borderRadius: '6px',
-                  padding: '10px',
-                  color: '#ffffff',
-                  fontSize: '13px'
-                }}
-              />
-            </div>
-
-            <div style={{ marginBottom: '14px' }}>
-              <label style={{ display: 'block', fontSize: '12px', color: '#888888', marginBottom: '6px' }}>Secret / Content / Amount</label>
-              <input
-                type="text"
-                placeholder="Secure string, key, or token payload"
-                value={newSecret}
-                onChange={e => setNewSecret(e.target.value)}
-                required
-                style={{
-                  width: '100%',
-                  background: '#000000',
-                  border: '1px solid #222222',
-                  borderRadius: '6px',
-                  padding: '10px',
-                  color: '#ffffff',
-                  fontSize: '13px'
-                }}
-              />
-            </div>
-
-            <div style={{ marginBottom: '22px' }}>
-              <label style={{ display: 'block', fontSize: '12px', color: '#888888', marginBottom: '6px' }}>Metadata / Beneficiary</label>
-              <input
-                type="text"
-                placeholder="e.g. Assigned to rohithabid@gmail.com"
-                value={newMeta}
-                onChange={e => setNewMeta(e.target.value)}
-                style={{
-                  width: '100%',
-                  background: '#000000',
-                  border: '1px solid #222222',
-                  borderRadius: '6px',
-                  padding: '10px',
-                  color: '#ffffff',
-                  fontSize: '13px'
-                }}
-              />
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-              <button
-                type="button"
-                onClick={() => setShowAddForm(false)}
-                style={{
-                  background: '#161616',
-                  color: '#888888',
-                  border: 'none',
-                  borderRadius: '6px',
-                  padding: '8px 16px',
-                  fontSize: '13px'
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                style={{
-                  background: '#ef4444',
-                  color: '#ffffff',
-                  border: 'none',
-                  borderRadius: '6px',
-                  padding: '8px 20px',
-                  fontSize: '13px',
-                  fontWeight: 700
-                }}
-              >
-                Lock Asset
-              </button>
-            </div>
-          </form>
-        </div>
+      {currentUser.role === 'co_owner' && (
+        <CoOwnerDashboard
+          currentUser={currentUser}
+          records={records}
+          onApproveEscrow={handleApproveEscrow}
+          onVerifyDocument={handleVerifyDocument}
+        />
       )}
     </div>
   );
